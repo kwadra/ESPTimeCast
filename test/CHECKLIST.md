@@ -111,7 +111,7 @@ Test Suite Complete
 
 ### 1. Run Tests
 ```bash
-cd /Users/quadra/git/ESPTimeCast
+cd $HOME/git/ESPTimeCast
 pio test -e native
 ```
 
@@ -146,7 +146,7 @@ Add tests for:
 ## 📚 File Locations
 
 ```
-/Users/quadra/git/ESPTimeCast/
+$HOME/git/ESPTimeCast/
 ├── test/
 │   ├── README.md
 │   ├── QUICKSTART.md

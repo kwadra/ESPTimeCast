@@ -19,7 +19,7 @@ Comprehensive unit tests for the ESPTimeCast project using the **Unity** testing
 ### Prerequisites
 ```bash
 pip install platformio
-cd /Users/quadra/git/ESPTimeCast
+cd $HOME/git/ESPTimeCast
 ```
 
 ### Run All Tests
