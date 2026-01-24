@@ -7,8 +7,7 @@ dependencies = ["platformio>=6.1.17"]
 
 
 [tool.uv]
-build = false
-
+package = false
 
 [tool.uv.sources]
 platformio = { url = "https://github.com/platformio/platformio-core/archive/refs/heads/develop.zip" }
