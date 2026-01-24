@@ -51,17 +51,17 @@ jobs:
       run: uv python install 3.12
     
     - name: Install PlatformIO with uv
-      run: uv tool install platformio
+      run: uv sync
     
     - name: Build ESP32-C3
       run: |
         cd /home/runner/work/ESPTimeCast/ESPTimeCast
-        pio run -e esp32_c3
+        uv run pio run -e esp32_c3
     
     - name: Build ESP32-S3
       run: |
         cd /home/runner/work/ESPTimeCast/ESPTimeCast
-        pio run -e esp32_s3
+        uv run pio run -e esp32_s3
     
     - name: Upload build artifacts
       if: always()
