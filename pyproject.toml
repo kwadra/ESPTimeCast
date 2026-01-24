@@ -3,7 +3,7 @@ name = "esptimecast"
 version = "0.1.0"
 description = "ESP32 project with PlatformIO"
 requires-python = ">=3.12"
-dependencies = ["platformio>=6.1.17"]
+dependencies = ["platformio>=6.1.17", "pip"]
 
 
 [tool.uv]
