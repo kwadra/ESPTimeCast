@@ -57,10 +57,10 @@ jobs:
         cd /home/runner/work/ESPTimeCast/ESPTimeCast
         uv run pio run -e esp32_c3
     
-    - name: Build ESP32-S3
+    - name: Build ESP32-S2
       run: |
         cd /home/runner/work/ESPTimeCast/ESPTimeCast
-        uv run pio run -e esp32_s3
+        uv run pio run -e esp32_s2
     
     - name: Upload build artifacts
       if: always()
