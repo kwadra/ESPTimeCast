@@ -1,5 +1,6 @@
 # Major Changes since fork
-Development is targeted toward the esp32 since I don't have any ESP8266's to test with
+Development is targeted toward the esp32 since I don't have any ESP8266's to test with.
+Added unit tests and automated dependency management / builds using PlatformIO tools.
 
 ## Getting Started
 1. Ensure Astral UV is installed. See https://docs.astral.sh/uv/getting-started/installation/ for platform-specific install. 
