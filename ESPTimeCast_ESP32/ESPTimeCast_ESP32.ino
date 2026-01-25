@@ -22,9 +22,30 @@
 
 #define HARDWARE_TYPE MD_MAX72XX::FC16_HW
 #define MAX_DEVICES 4
-#define CLK_PIN 7    //D5
-#define CS_PIN 11    // D7
-#define DATA_PIN 12  //D8
+
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+  #define BOARD_NAME "ESP32-C3"
+   #define CLK_PIN 7    //D5
+  #define CS_PIN 20    // D7
+  #define DATA_PIN 8  //D8
+#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+  #define BOARD_NAME "ESP32-S3"
+   #define CLK_PIN 7    //D5
+  #define CS_PIN 11    // D7
+  #define DATA_PIN 12  //D8
+#elif defined(ESP8266)
+  #define BOARD_NAME "ESP8266"
+  #define CLK_PIN 14   //D5
+  #define CS_PIN 13    //D7
+  #define DATA_PIN 15  //D8
+#else
+  #define BOARD_NAME "ESP32"
+  #define CLK_PIN 7    //D5
+  #define CS_PIN 11    // D7
+  #define DATA_PIN 12  //D8
+#endif
+
+
 
 #ifdef ESP8266
 WiFiEventHandler mConnectHandler;
@@ -218,7 +239,7 @@ void loadConfig() {
   // Check if config.json exists, if not, create default
   if (!LittleFS.exists("/config.json")) {
     Serial.println(F("[CONFIG] config.json not found, creating with defaults..."));
-    DynamicJsonDocument doc(1024);
+    JsonDocument doc;
     doc[F("ssid")] = "";
     doc[F("password")] = "";
     doc[F("openWeatherApiKey")] = "";
@@ -255,7 +276,7 @@ void loadConfig() {
     doc[F("clockOnlyDuringDimming")] = false;
 
     // Add countdown defaults when creating a new config.json
-    JsonObject countdownObj = doc.createNestedObject("countdown");
+    JsonObject countdownObj = doc["countdown"].to<JsonObject>();
     countdownObj["enabled"] = false;
     countdownObj["targetTimestamp"] = 0;
     countdownObj["label"] = "";
@@ -278,7 +299,7 @@ void loadConfig() {
     return;
   }
 
-  DynamicJsonDocument doc(1024);  // Size based on ArduinoJson Assistant + buffer
+  JsonDocument doc;
   DeserializationError error = deserializeJson(doc, configFile);
   configFile.close();
 
@@ -301,7 +322,7 @@ void loadConfig() {
   clockDuration = doc["clockDuration"] | 10000;
   weatherDuration = doc["weatherDuration"] | 5000;
   strlcpy(timeZone, doc["timeZone"] | "Etc/UTC", sizeof(timeZone));
-  if (doc.containsKey("language")) {
+  if (doc["language"]) {
     strlcpy(language, doc["language"], sizeof(language));
   } else {
     strlcpy(language, "en", sizeof(language));
@@ -314,7 +335,7 @@ void loadConfig() {
   showDayOfWeek = doc["showDayOfWeek"] | true;
   showDate = doc["showDate"] | false;
   showHumidity = doc["showHumidity"] | false;
-  colonBlinkEnabled = doc.containsKey("colonBlinkEnabled") ? doc["colonBlinkEnabled"].as<bool>() : true;
+  colonBlinkEnabled = doc["colonBlinkEnabled"] | true;
   showWeatherDescription = doc["showWeatherDescription"] | false;
 
   // --- Dimming settings ---
@@ -344,7 +365,7 @@ void loadConfig() {
   }
 
   // --- Automatic dimming ---
-  if (doc.containsKey("autoDimmingEnabled")) {
+  if (doc["autoDimmingEnabled"]) {
     if (doc["autoDimmingEnabled"].is<bool>()) {
       autoDimmingEnabled = doc["autoDimmingEnabled"].as<bool>();
     } else {
@@ -370,7 +391,7 @@ void loadConfig() {
 
 
   // --- COUNTDOWN CONFIG LOADING ---
-  if (doc.containsKey("countdown")) {
+  if (doc["countdown"]) {
     JsonObject countdownObj = doc["countdown"];
 
     countdownEnabled = countdownObj["enabled"] | false;
@@ -399,7 +420,7 @@ void loadConfig() {
   }
 
   // --- CLOCK-ONLY-DURING-DIMMING LOADING ---
-  if (doc.containsKey("clockOnlyDuringDimming")) {
+  if (doc["clockOnlyDuringDimming"]) {
     clockOnlyDuringDimming = doc["clockOnlyDuringDimming"].as<bool>();
   } else {
     clockOnlyDuringDimming = false;
@@ -756,7 +777,7 @@ void setupWebServer() {
       request->send(500, "application/json", "{\"error\":\"Failed to open config.json\"}");
       return;
     }
-    DynamicJsonDocument doc(2048);
+    JsonDocument doc;
     DeserializationError err = deserializeJson(doc, f);
     f.close();
     if (err) {
@@ -779,7 +800,7 @@ void setupWebServer() {
 
   server.on("/save", HTTP_POST, [](AsyncWebServerRequest *request) {
     Serial.println(F("[WEBSERVER] Request: /save"));
-    DynamicJsonDocument doc(2048);
+    JsonDocument doc;
 
     File configFile = LittleFS.open("/config.json", "r");
     if (configFile) {
@@ -875,7 +896,7 @@ void setupWebServer() {
       }
     }
 
-    JsonObject countdownObj = doc.createNestedObject("countdown");
+    JsonObject countdownObj = doc["countdown"].to<JsonObject>();
     countdownObj["enabled"] = newCountdownEnabled;
     countdownObj["targetTimestamp"] = newTargetTimestamp;
     countdownObj["label"] = countdownLabelStr;
@@ -892,7 +913,7 @@ void setupWebServer() {
     File f = LittleFS.open("/config.json", "w");
     if (!f) {
       Serial.println(F("[SAVE] ERROR: Failed to open /config.json for writing!"));
-      DynamicJsonDocument errorDoc(256);
+      JsonDocument errorDoc;
       errorDoc[F("error")] = "Failed to write config file.";
       String response;
       serializeJson(errorDoc, response);
@@ -908,7 +929,7 @@ void setupWebServer() {
     File verify = LittleFS.open("/config.json", "r");
     if (!verify) {
       Serial.println(F("[SAVE] ERROR: Failed to open /config.json for reading during verification!"));
-      DynamicJsonDocument errorDoc(256);
+      JsonDocument errorDoc;
       errorDoc[F("error")] = "Verification failed: Could not re-open config file.";
       String response;
       serializeJson(errorDoc, response);
@@ -921,14 +942,14 @@ void setupWebServer() {
     }
     verify.seek(0);
 
-    DynamicJsonDocument test(2048);
+    JsonDocument test;
     DeserializationError err = deserializeJson(test, verify);
     verify.close();
 
     if (err) {
       Serial.print(F("[SAVE] Config corrupted after save: "));
       Serial.println(err.f_str());
-      DynamicJsonDocument errorDoc(256);
+      JsonDocument errorDoc;
       errorDoc[F("error")] = String("Config corrupted. Reboot cancelled. Error: ") + err.f_str();
       String response;
       serializeJson(errorDoc, response);
@@ -937,7 +958,7 @@ void setupWebServer() {
     }
 
     Serial.println(F("[SAVE] Config verification successful."));
-    DynamicJsonDocument okDoc(128);
+    JsonDocument okDoc;
     strlcpy(customMessage, doc["customMessage"] | "", sizeof(customMessage));
     okDoc[F("message")] = "Saved successfully. Rebooting...";
     String response;
@@ -959,7 +980,7 @@ void setupWebServer() {
       File src = LittleFS.open("/config.bak", "r");
       if (!src) {
         Serial.println(F("[WEBSERVER] Failed to open /config.bak"));
-        DynamicJsonDocument errorDoc(128);
+        JsonDocument errorDoc;
         errorDoc[F("error")] = "Failed to open backup file.";
         String response;
         serializeJson(errorDoc, response);
@@ -970,7 +991,7 @@ void setupWebServer() {
       if (!dst) {
         src.close();
         Serial.println(F("[WEBSERVER] Failed to open /config.json for writing"));
-        DynamicJsonDocument errorDoc(128);
+        JsonDocument errorDoc;
         errorDoc[F("error")] = "Failed to open config for writing.";
         String response;
         serializeJson(errorDoc, response);
@@ -984,7 +1005,7 @@ void setupWebServer() {
       src.close();
       dst.close();
 
-      DynamicJsonDocument okDoc(128);
+      JsonDocument okDoc;
       okDoc[F("message")] = "✅ Backup restored! Device will now reboot.";
       String response;
       serializeJson(okDoc, response);
@@ -998,7 +1019,7 @@ void setupWebServer() {
 
     } else {
       Serial.println(F("[WEBSERVER] No backup found"));
-      DynamicJsonDocument errorDoc(128);
+      JsonDocument errorDoc;
       errorDoc[F("error")] = "No backup found.";
       String response;
       serializeJson(errorDoc, response);
@@ -1254,7 +1275,7 @@ void setupWebServer() {
     Serial.printf("[WEBSERVER] Set clockOnlyDuringDimming to %d (requested)\n", clockOnlyDuringDimming);
 
     // Read existing config.json (if present)
-    DynamicJsonDocument doc(2048);
+    JsonDocument doc;
     bool needToWrite = true;
     File configFile = LittleFS.open("/config.json", "r");
     if (configFile) {
@@ -1271,7 +1292,7 @@ void setupWebServer() {
         if (existing == enableNow) {
           Serial.println(F("[WEBSERVER] clockOnlyDuringDimming unchanged — skipping write."));
           // Send immediate OK response without touching FS
-          DynamicJsonDocument okDoc(128);
+          JsonDocument okDoc;
           okDoc[F("ok")] = true;
           okDoc[F("clockOnlyDuringDimming")] = enableNow;
           String response;
@@ -1299,7 +1320,7 @@ void setupWebServer() {
     File f = LittleFS.open("/config.json", "w");
     if (!f) {
       Serial.println(F("[WEBSERVER] ERROR: Failed to open /config.json for writing"));
-      DynamicJsonDocument errDoc(128);
+      JsonDocument errDoc;
       errDoc[F("error")] = "Failed to write config file.";
       String response;
       serializeJson(errDoc, response);
@@ -1312,7 +1333,7 @@ void setupWebServer() {
     Serial.printf("[WEBSERVER] Saved clockOnlyDuringDimming=%d to /config.json (%u bytes written)\n", clockOnlyDuringDimming, bytesWritten);
 
     // Send immediate response (no reboot)
-    DynamicJsonDocument okDoc(128);
+    JsonDocument okDoc;
     okDoc[F("ok")] = true;
     okDoc[F("clockOnlyDuringDimming")] = clockOnlyDuringDimming;
     String response;
@@ -1494,7 +1515,7 @@ void setupWebServer() {
       return;
     }
 
-    DynamicJsonDocument doc(2048);
+    JsonDocument doc;
     DeserializationError err = deserializeJson(doc, f);
     f.close();
     if (err) {
@@ -2004,7 +2025,7 @@ void fetchWeather() {
     Serial.print(F("[WEATHER] Payload: "));  // Use F() with Serial.print
     Serial.println(payload);
 
-    DynamicJsonDocument doc(1536);  // Adjust size as needed, use ArduinoJson Assistant
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, payload);
 
     if (error) {
@@ -2014,7 +2035,7 @@ void fetchWeather() {
       return;
     }
 
-    if (doc.containsKey(F("main")) && doc[F("main")].containsKey(F("temp"))) {
+    if (doc[F("main")] && doc[F("main")][F("temp")]) {
       float temp = doc[F("main")][F("temp")];
       currentTemp = String((int)round(temp)) + "°";
       Serial.printf("[WEATHER] Temp: %s\n", currentTemp.c_str());
@@ -2025,19 +2046,19 @@ void fetchWeather() {
       return;
     }
 
-    if (doc.containsKey(F("main")) && doc[F("main")].containsKey(F("humidity"))) {
+    if (doc[F("main")][F("humidity")]){
       currentHumidity = doc[F("main")][F("humidity")];
       Serial.printf("[WEATHER] Humidity: %d%%\n", currentHumidity);
     } else {
       currentHumidity = -1;
     }
 
-    if (doc.containsKey(F("weather")) && doc[F("weather")].is<JsonArray>()) {
+    if (doc[F("weather")] && doc[F("weather")].is<JsonArray>()) {
       JsonObject weatherObj = doc[F("weather")][0];
-      if (weatherObj.containsKey(F("main"))) {
+      if (weatherObj[F("main")]) {
         mainDesc = weatherObj[F("main")].as<String>();
       }
-      if (weatherObj.containsKey(F("description"))) {
+      if (weatherObj[F("description")]) {
         detailedDesc = weatherObj[F("description")].as<String>();
       }
     } else {
@@ -2050,9 +2071,9 @@ void fetchWeather() {
     // -----------------------------------------
     // Sunrise/Sunset for Auto Dimming (local time)
     // -----------------------------------------
-    if (doc.containsKey(F("sys"))) {
+    if (doc[F("sys")]) {
       JsonObject sys = doc[F("sys")];
-      if (sys.containsKey(F("sunrise")) && sys.containsKey(F("sunset"))) {
+      if (sys[F("sunrise")] && sys[F("sunset")]) {
         // OWM gives UTC timestamps
         time_t sunriseUtc = sys[F("sunrise")].as<time_t>();
         time_t sunsetUtc = sys[F("sunset")].as<time_t>();
@@ -2095,7 +2116,7 @@ void fetchWeather() {
     // -----------------------------------------
     if (autoDimmingEnabled && sunriseHour >= 0 && sunsetHour >= 0) {
       File configFile = LittleFS.open("/config.json", "r");
-      DynamicJsonDocument doc(1024);
+      JsonDocument doc;
 
       if (configFile) {
         DeserializationError error = deserializeJson(doc, configFile);
@@ -2211,7 +2232,7 @@ String formatTotalRuntime() {
 void saveCustomMessageToConfig(const char *msg) {
   Serial.println(F("[CONFIG] Updating customMessage in config.json..."));
 
-  DynamicJsonDocument doc(2048);
+  JsonDocument doc;
 
   // Load existing config.json (if present)
   File configFile = LittleFS.open("/config.json", "r");
@@ -2599,7 +2620,7 @@ void advanceDisplayModeSafe() {
 
 //config save after countdown finishes
 bool saveCountdownConfig(bool enabled, time_t targetTimestamp, const String &label) {
-  DynamicJsonDocument doc(2048);
+  JsonDocument doc;
 
   File configFile = LittleFS.open("/config.json", "r");
   if (configFile) {
@@ -2612,7 +2633,7 @@ bool saveCountdownConfig(bool enabled, time_t targetTimestamp, const String &lab
     }
   }
 
-  JsonObject countdownObj = doc["countdown"].is<JsonObject>() ? doc["countdown"].as<JsonObject>() : doc.createNestedObject("countdown");
+  JsonObject countdownObj = doc["countdown"].is<JsonObject>() ? doc["countdown"].as<JsonObject>() : doc["countdown"].to<JsonObject>();
   countdownObj["enabled"] = enabled;
   countdownObj["targetTimestamp"] = targetTimestamp;
   countdownObj["label"] = label;
@@ -3490,7 +3511,7 @@ void loop() {
 
       if (httpCode == HTTP_CODE_OK) {
         String payload = https.getString();
-        StaticJsonDocument<1024> doc;
+        JsonDocument  doc;
         DeserializationError error = deserializeJson(doc, payload);
 
         if (!error && doc.is<JsonArray>() && doc.size() > 0) {

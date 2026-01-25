@@ -1,0 +1,48 @@
+# ESP32 Build Files
+build/
+.pio/
+.piolibdeps/
+.pioenvs/
+
+# PlatformIO
+.vscode/
+.clang_complete
+.gcc-flags.json
+
+# Arduino IDE
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# Compiled Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Firmware
+*.bin
+*.elf
+*.map
+
+# Dependencies
+lib/
+include/
+
+# Environment
+.env
+.env.local

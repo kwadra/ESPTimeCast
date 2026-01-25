@@ -1,0 +1,13 @@
+[project]
+name = "esptimecast"
+version = "0.1.0"
+description = "ESP32 project with PlatformIO"
+requires-python = ">=3.12"
+dependencies = ["platformio>=6.1.17", "pip"]
+
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+platformio = { url = "https://github.com/platformio/platformio-core/archive/refs/heads/develop.zip" }
