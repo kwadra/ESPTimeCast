@@ -46,21 +46,15 @@ jobs:
       with:
         version: "latest"
     
-    - name: Set up Python
-      run: uv python install 3.12
-    
     - name: Install PlatformIO with uv
-      run: uv tool install platformio
-    - name: Install dependencies
-      run: |
-        uv sync
+      run: uv sync
     
     - name: Build ${{ matrix.variant }}
       run: |
         uv run pio run -e ${{ matrix.variant }}
     
     - name: Upload build artifacts
-      if: always()
+      if: always() 
       uses: actions/upload-artifact@v6
       with:
         name: firmware-${{ matrix.variant }}
