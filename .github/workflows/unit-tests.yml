@@ -54,11 +54,14 @@ jobs:
     
     - name: Install PlatformIO with uv
       run: uv tool install platformio
+    - name: Install dependencies
+      run: |
+        uv sync
     
     - name: Build ${{ matrix.variant }}
       run: |
         cd /home/runner/work/ESPTimeCast/ESPTimeCast
-        pio run -e ${{ matrix.variant }}
+        uv run pio run -e ${{ matrix.variant }}
     
     - name: Upload build artifacts
       if: always()
