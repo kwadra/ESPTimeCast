@@ -36,6 +36,9 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        variant: [esp32_c3, esp32_s2]
     
     steps:
     - name: Checkout code
@@ -50,23 +53,16 @@ jobs:
       run: uv python install 3.12
     
     - name: Install PlatformIO with uv
-      run: uv sync
+      run: uv tool install platformio
     
-    - name: Build ESP32-C3
+    - name: Build ${{ matrix.variant }}
       run: |
         cd /home/runner/work/ESPTimeCast/ESPTimeCast
-        uv run pio run -e esp32_c3
-    
-    - name: Build ESP32-S2
-      run: |
-        cd /home/runner/work/ESPTimeCast/ESPTimeCast
-        uv run pio run -e esp32_s2
+        pio run -e ${{ matrix.variant }}
     
     - name: Upload build artifacts
       if: always()
       uses: actions/upload-artifact@v6
       with:
-        name: firmware-binaries
-        path: |
-          .pio/build/esp32_c3/firmware.bin
-          .pio/build/esp32_s3/firmware.bin
+        name: firmware-${{ matrix.variant }}
+        path: .pio/build/${{ matrix.variant }}/firmware.bin
