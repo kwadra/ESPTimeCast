@@ -22,9 +22,20 @@
 
 #define HARDWARE_TYPE MD_MAX72XX::FC16_HW
 #define MAX_DEVICES 4
-#define CLK_PIN 7    //D5
-#define CS_PIN 11    // D7
-#define DATA_PIN 12  //D8
+
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+  #define BOARD_NAME "ESP32-C3"
+   #define CLK_PIN 7    //D5
+  #define CS_PIN 20    // D7
+  #define DATA_PIN 8  //D8
+#else
+  #define BOARD_NAME "ESP32"
+  #define CLK_PIN 7    //D5
+  #define CS_PIN 11    // D7
+  #define DATA_PIN 12  //D8
+#endif
+
+
 
 #ifdef ESP8266
 WiFiEventHandler mConnectHandler;
