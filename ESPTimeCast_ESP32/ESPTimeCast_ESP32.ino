@@ -28,6 +28,16 @@
    #define CLK_PIN 7    //D5
   #define CS_PIN 20    // D7
   #define DATA_PIN 8  //D8
+#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+  #define BOARD_NAME "ESP32-S3"
+   #define CLK_PIN 7    //D5
+  #define CS_PIN 11    // D7
+  #define DATA_PIN 12  //D8
+#elif defined(ESP8266)
+  #define BOARD_NAME "ESP8266"
+  #define CLK_PIN 14   //D5
+  #define CS_PIN 13    //D7
+  #define DATA_PIN 15  //D8
 #else
   #define BOARD_NAME "ESP32"
   #define CLK_PIN 7    //D5
