@@ -16,16 +16,12 @@ jobs:
       with:
         version: "latest"
     
-    - name: Set up Python
-      run: uv python install 3.12
-    
     - name: Install PlatformIO with uv
-      run: uv tool install platformio
+      run: uv sync
     
     - name: Run unit tests
       run: |
-        cd /home/runner/work/ESPTimeCast/ESPTimeCast
-        pio test -e native
+        uv run pio test -e native
     
     - name: Upload test results
       if: always()
