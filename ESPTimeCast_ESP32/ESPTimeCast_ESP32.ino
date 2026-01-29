@@ -18,7 +18,6 @@
 #include "tz_lookup.h"      // Timezone lookup, do not duplicate mapping here!
 #include "days_lookup.h"    // Languages for the Days of the Week
 #include "months_lookup.h"  // Languages for the Months of the Year
-#include "index_html.h"     // Web UI
 
 #define HARDWARE_TYPE MD_MAX72XX::FC16_HW
 #define MAX_DEVICES 4
@@ -1723,7 +1722,7 @@ void setupWebServer() {
       delay(500);
 
       // --- Remove configuration and uptime files ---
-      const char *filesToRemove[] = { "/config.json", "/uptime.dat", "/index.html" };
+      const char *filesToRemove[] = { "/config.json", "/uptime.dat"};
       for (auto &file : filesToRemove) {
         if (LittleFS.exists(file)) {
           if (LittleFS.remove(file)) {
@@ -2313,7 +2312,6 @@ void setup() {
   }
   Serial.println(F("[SETUP] LittleFS file system mounted successfully."));
   loadUptime();
-  ensureHtmlFileExists();
   P.begin();  // Initialize Parola library
 
   P.setCharSpacing(0);
@@ -2396,70 +2394,6 @@ void setup() {
   lastColonBlink = millis();
   bootMillis = millis();
   saveUptime();
-}
-
-void ensureHtmlFileExists() {
-  Serial.println(F("[FS] Checking for /index.html on LittleFS..."));
-
-  // Length of embedded HTML in PROGMEM
-  size_t expectedSize = strlen_P(index_html);
-
-  // If the file exists, verify size before deciding to trust it
-  if (LittleFS.exists("/index.html")) {
-    File f = LittleFS.open("/index.html", "r");
-
-    if (!f) {
-      Serial.println(F("[FS] ERROR: /index.html exists but failed to open! Will rewrite."));
-    } else {
-      size_t actualSize = f.size();
-      f.close();
-
-      if (actualSize == expectedSize) {
-        Serial.printf("[FS] /index.html found (size OK: %u bytes). Using file system version.\n", actualSize);
-        return;  // STOP HERE — file is good
-      }
-
-      Serial.printf(
-        "[FS] /index.html size mismatch! Expected %u bytes, found %u. Rewriting...\n",
-        expectedSize, actualSize);
-    }
-  } else {
-    Serial.println(F("[FS] /index.html NOT found. Writing embedded content to LittleFS..."));
-  }
-
-  // -------------------------------
-  // Write embedded HTML to LittleFS
-  // -------------------------------
-
-  File f = LittleFS.open("/index.html", "w");
-  if (!f) {
-    Serial.println(F("[FS] ERROR: Failed to create /index.html for writing!"));
-    return;
-  }
-
-  size_t htmlLength = expectedSize;
-  size_t bytesWritten = 0;
-
-  for (size_t i = 0; i < htmlLength; i++) {
-    char c = pgm_read_byte_near(index_html + i);
-
-    if (f.write((uint8_t *)&c, 1) == 1) {
-      bytesWritten++;
-    } else {
-      Serial.printf("[FS] Write failure at character %u. Aborting write.\n", i);
-      f.close();
-      return;
-    }
-  }
-
-  f.close();
-
-  if (bytesWritten == htmlLength) {
-    Serial.printf("[FS] Successfully wrote %u bytes to /index.html.\n", bytesWritten);
-  } else {
-    Serial.printf("[FS] WARNING: Only wrote %u of %u bytes to /index.html (might be incomplete).\n",
-                  bytesWritten, htmlLength);
-  }
 }
 
 void advanceDisplayMode() {
