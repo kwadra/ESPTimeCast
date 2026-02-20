@@ -3,6 +3,7 @@
 #include <HTTPClient.h>
 #include <AsyncTCP.h>
 #include <LittleFS.h>
+#include <ArduinoOTA.h>
 #include <ArduinoJson.h>
 #include <MD_Parola.h>
 #include <MD_MAX72xx.h>
@@ -13,6 +14,7 @@
 #include <time.h>
 #include <WiFiClientSecure.h>
 #include <ESPmDNS.h>
+
 
 #include "mfactoryfont.h"   // Custom font
 #include "tz_lookup.h"      // Timezone lookup, do not duplicate mapping here!
@@ -32,24 +34,11 @@
    #define CLK_PIN 7    //D5
   #define CS_PIN 11    // D7
   #define DATA_PIN 12  //D8
-#elif defined(ESP8266)
-  #define BOARD_NAME "ESP8266"
-  #define CLK_PIN 14   //D5
-  #define CS_PIN 13    //D7
-  #define DATA_PIN 15  //D8
 #else
   #define BOARD_NAME "ESP32"
   #define CLK_PIN 7    //D5
   #define CS_PIN 11    // D7
   #define DATA_PIN 12  //D8
-#endif
-
-
-
-#ifdef ESP8266
-WiFiEventHandler mConnectHandler;
-WiFiEventHandler mDisConnectHandler;
-WiFiEventHandler mGotIpHandler;
 #endif
 
 MD_Parola P = MD_Parola(HARDWARE_TYPE, DATA_PIN, CLK_PIN, CS_PIN, MAX_DEVICES);
@@ -62,6 +51,12 @@ int messageScrollSpeed = 85;          // default fallback
 
 // --- Nightscout setting ---
 const unsigned int NIGHTSCOUT_IDLE_THRESHOLD_MIN = 10;  // minutes before data is considered outdated
+
+// --- Device identity ---
+const char *DEFAULT_HOSTNAME = "esptimecast";
+const char *DEFAULT_AP_PASSWORD = "12345678";
+const char *DEFAULT_AP_SSID = "ESPTimeCast";
+String deviceHostname = DEFAULT_HOSTNAME;
 
 // WiFi and configuration globals
 char ssid[32] = "";
@@ -447,11 +442,15 @@ void loadConfig() {
 
 
 // -----------------------------------------------------------------------------
+// Network Idenity
+// -----------------------------------------------------------------------------
+
+void setupHostname() {
+  WiFi.setHostname(deviceHostname.c_str());
+}
+// -----------------------------------------------------------------------------
 // WiFi Setup
 // -----------------------------------------------------------------------------
-const char *DEFAULT_AP_PASSWORD = "12345678";
-const char *AP_SSID = "ESPTimeCast";
-
 void connectWiFi() {
   Serial.println(F("[WIFI] Connecting to WiFi..."));
 
@@ -462,12 +461,13 @@ void connectWiFi() {
     WiFi.mode(WIFI_AP);
     WiFi.disconnect(true);
     delay(100);
+    setupHostname();
 
     if (strlen(DEFAULT_AP_PASSWORD) < 8) {
-      WiFi.softAP(AP_SSID);
+      WiFi.softAP(DEFAULT_AP_SSID);
       Serial.println(F("[WIFI] AP Mode started (no password, too short)."));
     } else {
-      WiFi.softAP(AP_SSID, DEFAULT_AP_PASSWORD);
+      WiFi.softAP(DEFAULT_AP_SSID, DEFAULT_AP_PASSWORD);
       Serial.println(F("[WIFI] AP Mode started."));
     }
 
@@ -490,10 +490,11 @@ void connectWiFi() {
   }
 
   // If credentials exist, attempt STA connection
+  WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.disconnect(true);
   delay(100);
-
+  setupHostname();
   WiFi.begin(ssid, password);
   unsigned long startAttemptTime = millis();
 
@@ -538,7 +539,8 @@ void connectWiFi() {
     } else if (now - startAttemptTime >= timeout) {
       Serial.println(F("[WIFI] Failed. Starting AP mode..."));
       WiFi.mode(WIFI_AP);
-      WiFi.softAP(AP_SSID, DEFAULT_AP_PASSWORD);
+      setupHostname();
+      WiFi.softAP(DEFAULT_AP_SSID, DEFAULT_AP_PASSWORD);
       Serial.print(F("[WIFI] AP IP address: "));
       Serial.println(WiFi.softAPIP());
       dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
@@ -573,14 +575,12 @@ void connectWiFi() {
 // mDNS
 // -----------------------------------------------------------------------------
 void setupMDNS() {
-  const char *hostName = "esptimecast";  // your device name
   MDNS.end();
-  bool mdnsStarted = false;
-  mdnsStarted = MDNS.begin(hostName);
+  bool mdnsStarted = MDNS.begin(deviceHostname.c_str());
 
   if (mdnsStarted) {
     MDNS.addService("http", "tcp", 80);
-    Serial.printf("[WIFI] mDNS started: http://%s.local\n", hostName);
+    Serial.printf("[WIFI] mDNS started: http://%s.local\n", deviceHostname.c_str());
   } else {
     Serial.println("[WIFI] mDNS failed to start");
   }
@@ -735,11 +735,6 @@ void setupWebServer() {
     request->send(response);
   });
 
-  server.on("/generate_204", HTTP_GET, handleCaptivePortal);         // Android
-  server.on("/fwlink", HTTP_GET, handleCaptivePortal);               // Windows
-  server.on("/hotspot-detect.html", HTTP_GET, handleCaptivePortal);  // iOS/macOS
-  server.on("/ncsi.txt", HTTP_GET, handleCaptivePortal);             // Windows NCSI (variation)
-  server.on("/cp/success.txt", HTTP_GET, handleCaptivePortal);       // Android/Generic Success Check
   server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(204);  // 204 No Content response
   });
@@ -1479,6 +1474,58 @@ void setupWebServer() {
     }
   });
 
+  server.on("/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+    int scanStatus = WiFi.scanComplete();
+
+    // -2 means scan not triggered, -1 means scan in progress
+    if (scanStatus < -1 || scanStatus == WIFI_SCAN_FAILED) {
+      // Start the asynchronous scan
+      WiFi.scanNetworks(true);
+      request->send(202, "application/json", "{\"status\":\"processing\"}");
+    } else if (scanStatus == -1) {
+      // Scan is currently running
+      request->send(202, "application/json", "{\"status\":\"processing\"}");
+    } else {
+      // Scan finished (scanStatus >= 0)
+      String json = "[";
+      for (int i = 0; i < scanStatus; ++i) {
+        json += "{";
+        json += "\"ssid\":\"" + WiFi.SSID(i) + "\",";
+        json += "\"rssi\":" + String(WiFi.RSSI(i));
+        json += "}";
+        if (i < scanStatus - 1) json += ",";
+      }
+      json += "]";
+
+      // Clean up scan results from memory
+      WiFi.scanDelete();
+      request->send(200, "application/json", json);
+    }
+  });
+
+  server.on("/ip", HTTP_GET, [](AsyncWebServerRequest *request) {
+    String ip;
+
+    if (WiFi.getMode() == WIFI_AP) {
+      ip = WiFi.softAPIP().toString();  // usually 192.168.4.1
+    } else if (WiFi.isConnected()) {
+      ip = WiFi.localIP().toString();
+    } else {
+      ip = "—";
+    }
+
+    request->send(200, "text/plain", ip);
+  });
+
+  server.on("/hostname", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (WiFi.getMode() == WIFI_AP) {
+      request->send(200, "text/plain", "AP-Mode");
+    } else {
+      String host = deviceHostname + ".local";
+      request->send(200, "text/plain", host);
+    }
+  });
+
   server.on("/uptime", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!LittleFS.exists("/uptime.dat")) {
       request->send(200, "text/plain", "No uptime recorded yet.");
@@ -1736,12 +1783,7 @@ void setupWebServer() {
       }
 
 // --- Clear Wi-Fi credentials ---
-#if defined(ESP8266)
-      WiFi.disconnect(true);  // true = wipe credentials
-#elif defined(ESP32)
         WiFi.disconnect(true, true);  // (erase=true, wifioff=true)
-#endif
-
       Serial.println(F("[RESET] Factory defaults restored. Rebooting..."));
       delay(500);
       ESP.restart();
@@ -1756,24 +1798,34 @@ void setupWebServer() {
 
 void handleCaptivePortal(AsyncWebServerRequest *request) {
   String uri = request->url();
-
-  // Filter out system-generated probe requests
-  if (!uri.endsWith("/204") && !uri.endsWith("/ipv6check") && !uri.endsWith("connecttest.txt") && !uri.endsWith("/generate_204") && !uri.endsWith("/fwlink") && !uri.endsWith("/hotspot-detect.html")) {
-
-    Serial.print(F("[WEBSERVER] Captive Portal triggered for URL: "));
-    Serial.println(uri);
+  // Never interfere with real UI or API
+  if (
+    uri == "/" || uri == "/index.html" || uri.startsWith("/config") || uri.startsWith("/hostname") || uri.startsWith("/ip") || uri.endsWith(".json") || uri.endsWith(".js") || uri.endsWith(".css") || uri.endsWith(".png") || uri.endsWith(".ico")) {
+    return;  // let normal handlers serve it
   }
-
+  // Known captive portal probes → redirect
+  if (
+    uri == "/generate_204" || uri == "/gen_204" || uri == "/fwlink" || uri == "/hotspot-detect.html" || uri == "/ncsi.txt" || uri == "/cp/success.txt" || uri == "/library/test/success.html") {
+    if (isAPMode) {
+      IPAddress apIP = WiFi.softAPIP();
+      String redirectUrl = "http://" + apIP.toString() + "/";
+      //Serial.printf("[WEBSERVER] Captive probe %s → redirect\n", uri.c_str());
+      request->redirect(redirectUrl);
+      return;
+    }
+  }
+  
+    // Unknown URLs in AP mode → redirect (helps odd OSes like /chat)
   if (isAPMode) {
     IPAddress apIP = WiFi.softAPIP();
     String redirectUrl = "http://" + apIP.toString() + "/";
-    Serial.print(F("[WEBSERVER] Redirecting to captive portal: "));
-    Serial.println(redirectUrl);
+    Serial.printf("[WEBSERVER] Captive fallback redirect: %s\n", uri.c_str());
     request->redirect(redirectUrl);
   } else {
-    Serial.println(F("[WEBSERVER] Not in AP mode — sending 404"));
-    request->send(404, "text/plain", "Not found");
+    return;
   }
+  // STA mode fallback
+  request->send(404, "text/plain", "Not found");
 }
 
 
@@ -2303,7 +2355,7 @@ void setup() {
   Serial.println();
   Serial.println(F("[SETUP] Starting setup..."));
 
-  if (!LittleFS.begin(true)) {
+  if (!LittleFS.begin()) {
     Serial.println(F("[ERROR] LittleFS mount failed in setup! Halting."));
     while (true) {
       delay(1000);
@@ -2324,7 +2376,6 @@ void setup() {
 
   Serial.println(F("[SETUP] Parola (LED Matrix) initialized"));
 
-#if defined(ESP32)
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
@@ -2348,28 +2399,6 @@ void setup() {
     Serial.printf("[WIFI EVENT] %s (%d)\n", name, event);
   });
 
-#elif defined(ESP8266)
-  WiFi.setAutoReconnect(true);
-  WiFi.persistent(false);
-
-  mConnectHandler = WiFi.onStationModeConnected([](const WiFiEventStationModeConnected &ev) {
-    Serial.println("[WIFI EVENT] Connected");
-  });
-
-  mDisConnectHandler = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected &ev) {
-    Serial.printf("[WIFI EVENT] Disconnected (Reason: %d)\n", ev.reason);
-    MDNS.end();
-    Serial.println("[WIFI EVENT] mDNS stopped.");
-  });
-
-  mGotIpHandler = WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP &ev) {
-    Serial.printf("[WIFI EVENT] GOT_IP - IP: %s\n", ev.ip.toString().c_str());
-    lastWifiConnectTime = millis();
-    Serial.println("[WIFI EVENT] Re-initializing mDNS due to new IP.");
-    setupMDNS();
-  });
-#endif
-
   connectWiFi();
 
   if (isAPMode) {
@@ -2379,8 +2408,25 @@ void setup() {
   } else {
     Serial.println(F("[SETUP] WiFi state is uncertain after connection attempt."));
   }
+  if (!isAPMode && WiFi.status() == WL_CONNECTED) {
+    setupMDNS();
+  }
 
-  setupMDNS();
+  #if defined(ARDUINO_OTA)
+    ArduinoOTA.setHostname(deviceHostname.c_str());
+    ArduinoOTA.begin();
+    Serial.println(F("[SETUP] ArduinoOTA initialized"));
+      // Add handlers for OTA events (optional, but helpful for feedback)
+    ArduinoOTA.onStart([]() { Serial.println("Start updating"); });
+    ArduinoOTA.onEnd([]() { Serial.println("End update; restarting"); });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+      Serial.printf("Progress: %u%%\r", (progress * 100) / total);
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+      Serial.printf("Error[%u]: ", error);
+    });
+  #endif
+
   setupWebServer();
   Serial.println(F("[SETUP] Webserver setup complete"));
   Serial.println(F("[SETUP] Setup complete"));
@@ -2596,6 +2642,10 @@ bool saveCountdownConfig(bool enabled, time_t targetTimestamp, const String &lab
 
 
 void loop() {
+#if defined (ARDUINO_OTA)
+  ArduinoOTA.handle();
+#endif
+
   if (isAPMode) {
     dnsServer.processNextRequest();
   }
@@ -3421,11 +3471,7 @@ void loop() {
       // mktime() interprets tm as local, but system time is UTC already
       // so we can safely assume input is UTC
       return mktime(&tm_copy);
-#elif defined(ESP8266)
-      // ESP8266: timegm() not available either, same logic
-      struct tm tm_copy = *tm;
-      return mktime(&tm_copy);
-#else
+#else 
       // Platforms with proper timegm()
       return timegm(tm);
 #endif
